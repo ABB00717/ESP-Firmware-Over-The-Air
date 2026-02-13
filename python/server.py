@@ -73,7 +73,7 @@ def deleteFW(version: str):
 @app.route("/clean")
 def clean():
     for version, filename in versionList.items():
-        if not (FIRMWARE_PATH / filename).exists():
+        if (FIRMWARE_PATH / filename).exists():
             remove(FIRMWARE_PATH / filename)
     versionList.clear()
     remove(VERSION_PATH)
