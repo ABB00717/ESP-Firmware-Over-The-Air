@@ -2,7 +2,7 @@ from flask import Flask, render_template_string, send_file, redirect, request, a
 from pathlib import Path
 import tomllib
 import json
-from os import chdir
+from os import chdir, remove, rmdir
 
 CURPATH = Path(__file__).parent
 chdir(CURPATH)
@@ -59,6 +59,26 @@ def upload():
     with open(VERSION_PATH, "w", encoding="utf-8") as file:
         json.dump(versionList, file)
     return {"status": 1}
+
+@app.route("/delete/<version>")
+def deleteFW(version: str):
+    if version not in versionList:
+        return abort(404)
+    remove(FIRMWARE_PATH / versionList[version])
+    del versionList[version]
+    with open(VERSION_PATH, "w", encoding="utf-8") as file:
+        json.dump(versionList, file)
+    return {"status": 1}
+
+@app.route("/clean")
+def clean():
+    for version, filename in versionList.items():
+        if not (FIRMWARE_PATH / filename).exists():
+            remove(FIRMWARE_PATH / filename)
+    versionList.clear()
+    remove(VERSION_PATH)
+    rmdir(FIRMWARE_PATH)
+
 
 if __name__ == '__main__':
     # from socket import gethostbyname, gethostname
