@@ -1,36 +1,21 @@
 // include http lib
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <WiFiClientSecure.h>
+#include <HTTPUpdate.h>
 // include sd card lib
 #include <FS.h>
 #include <SD.h>
 #include <SPI.h>
 
 // gargs
-const char* ssid = "WiFi";
-const char* password = "pass";
+const String ssid = "wifi";
+const String password = "password";
+const String firmware_url = "https://example.com/"; 
 
-const char* url = "http://example.com/";
+const int TRIGGER_PIN = 0; // BOOT btn
 
 // functions
-bool initSDCard() {
-  Serial.print("init sd card ... ");
-  
-  if (!SD.begin(SD_CS_PIN)) {
-    Serial.println("err");
-    return false;
-  }
-
-  uint8_t cardType = SD.cardType();
-  if (cardType == CARD_NONE) {
-    Serial.println("err");
-    return false;
-  }
-
-  Serial.printf("%llu MB\n", SD.cardSize() / (1024 * 1024));
-  return true;
-}
-
 bool initWiFi() {
   WiFi.begin(ssid, password);
 
@@ -49,67 +34,79 @@ bool initWiFi() {
   return true;
 }
 
-void downloadFileToSD(const char* url, const char* filepath) {
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("錯誤：Wi-Fi 未連線，無法下載。");
-    return;
+bool initSDCard() {
+  Serial.print("init sd card ... ");
+  
+  if (!SD.begin(SD_CS_PIN)) {
+    Serial.println("err");
+    return false;
   }
 
-  HTTPClient http;
-  Serial.printf("正在請求網址: %s\n", url);
-  
-  http.begin(url);
-  int httpCode = http.GET();
-
-  if (httpCode == HTTP_CODE_OK) {
-    int totalSize = http.getSize();
-    Serial.printf("檔案大小: %d bytes\n", totalSize);
-
-    File file = SD.open(filepath, FILE_WRITE);
-    if (!file) {
-      Serial.println("錯誤：無法在 SD 卡建立檔案，可能是沒有空間或防寫鎖定。");
-      http.end();
-      return;
-    }
-
-    WiFiClient* stream = http.getStreamPtr();
-    uint8_t buff[2048] = { 0 }; 
-    int downloadedSize = 0;
-
-    Serial.println("開始下載並寫入 SD 卡...");
-    while (http.connected() && (totalSize > 0 || totalSize == -1)) {
-      size_t availableSize = stream->available();
-      
-      if (availableSize > 0) {
-        int bytesToRead = (availableSize > sizeof(buff)) ? sizeof(buff) : availableSize;
-        int bytesRead = stream->readBytes(buff, bytesToRead);
-        file.write(buff, bytesRead);
-        downloadedSize += bytesRead;
-        if (totalSize > 0) {
-          totalSize -= bytesRead;
-        }
-      }
-      delay(1);
-    }
-
-    file.close();
-    Serial.println();
-    Serial.printf("下載完成！總共寫入: %d bytes\n", downloadedSize);
-
-  } else {
-    Serial.printf("下載失敗！HTTP 錯誤碼: %d\n", httpCode);
+  uint8_t cardType = SD.cardType();
+  if (cardType == CARD_NONE) {
+    Serial.println("err");
+    return false;
   }
-  
-  http.end();
+
+  Serial.printf("%llu MB\n", SD.cardSize() / (1024 * 1024));
+  return true;
+}
+
+void startOTAUpdateHTTP(String url) {
+  WiFiClient client;
+
+  httpUpdate.onStart([]() { Serial.println("started"); });
+  httpUpdate.onEnd([]() { Serial.println("ended"); });
+  httpUpdate.onProgress([](int cur, int total) { Serial.printf("progress: %d / %d bytes (%.1f%%)\r", cur, total, (cur*100.0)/total); });
+  httpUpdate.onError([](int err) { Serial.printf("error: %d\n", err); });
+  t_httpUpdate_return ret = httpUpdate.update(client, url);
+
+  switch (ret) {
+    case HTTP_UPDATE_FAILED:
+      Serial.printf("HTTP_UPDATE_FAILD Error (%d): %s\n", httpUpdate.getLastError(), httpUpdate.getLastErrorString().c_str());
+      break;
+    case HTTP_UPDATE_NO_UPDATES:
+      Serial.println("沒有新版本");
+      break;
+  }
+}
+
+void startOTAUpdateHTTPS(String url) {
+  WiFiClientSecure client;
+  client.setInsecure(); 
+
+  httpUpdate.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+  httpUpdate.onStart([]() { Serial.println("started"); });
+  httpUpdate.onEnd([]() { Serial.println("ended"); });
+  httpUpdate.onProgress([](int cur, int total) { Serial.printf("progress: %d / %d bytes (%.1f%%)\r", cur, total, (cur*100.0)/total); });
+  httpUpdate.onError([](int err) { Serial.printf("error: %d\n", err); });
+  t_httpUpdate_return ret = httpUpdate.update(client, url);
+
+  switch (ret) {
+    case HTTP_UPDATE_FAILED:
+      Serial.printf("HTTP_UPDATE_FAILD Error (%d): %s\n", httpUpdate.getLastError(), httpUpdate.getLastErrorString().c_str());
+      break;
+    case HTTP_UPDATE_NO_UPDATES:
+      Serial.println("沒有新版本");
+      break;
+  }
 }
 
 // main
 void setup() {
   Serial.begin(115200);
-  initSDCard();
-  initWiFi();
+  pinMode(TRIGGER_PIN, INPUT_PULLUP);
+  if (!initWiFi()) {
+    ESP.restart();
+  }
 }
 
 void loop() {
-  
+  if (digitalRead(TRIGGER_PIN) == LOW) {
+    delay(1000);
+    if (firmware_url.startsWith("https://"))
+      startOTAUpdateHTTPS(firmware_url);
+    else if (firmware_url.startsWith("http://")) 
+      startOTAUpdateHTTP(firmware_url); 
+  }
 }
