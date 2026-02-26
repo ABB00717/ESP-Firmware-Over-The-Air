@@ -1,4 +1,4 @@
-#define FIRMWARE_VERSION "1.2.3"
+#define FIRMWARE_VERSION "1.2.5"
 // include http lib
 #include <WiFi.h>
 #include <HTTPClient.h>
@@ -52,6 +52,11 @@ emyPxgcYxn/eR44/KJ4EBs+lVDR3veyJm+kXQ99b21/+jh5Xos1AnX5iItreGCc=
 String md5;
 
 // functions
+void printProgress(size_t progress, size_t total) {
+    float percentage = (progress / (float)total) * 100;
+    Serial.printf("更新進度: %.2f%%\n", percentage);
+}
+
 bool initWiFi() {
   WiFi.begin(ssid, password);
 
@@ -143,13 +148,14 @@ void doOTA(String url) {
             Serial.println("Invalid content length");
             return;
         }
+        Update.onProgress(printProgress);
         if (!Update.begin(contentLength)) {
             delete client;
             https.end();
             Serial.println("Not enough space");
             return;
         }
-
+        
         Update.setMD5(md5.c_str());
 
         WiFiClient *stream = https.getStreamPtr();
@@ -181,6 +187,7 @@ void doOTA(String url) {
     delete client;
     https.end();
 }
+
 
 // main
 void setup() {
