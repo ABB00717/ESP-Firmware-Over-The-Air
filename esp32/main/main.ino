@@ -2,20 +2,13 @@
 #include "ota.h" // have funcs about ota
 #include <WiFi.h>
 
-// Wi-Fi Configuration
-#define USE_WPA2_ENTERPRISE // Uncomment this line to use WPA2 Enterprise (e.g. NTUST-PEAP)
-
-#ifdef USE_WPA2_ENTERPRISE
-const String ssid = "NTUST-PEAP";
-const String eap_identity = ""; // Normally empty or your student ID
-const String eap_username = "B11230017"; // EAP username (e.g., student ID)
-const String eap_password = "YOUR_PASSWORD";   // EAP password
-#else
-const String ssid = "sumimi";
-const String password = "Q9988551";
-#endif
-
-const String server_url = "https://leepotsung.pythonanywhere.com";
+// Dynamic Wi-Fi & Server config variables loaded from LittleFS config.json on boot
+String wifi_ssid;
+String wifi_password;
+String eap_identity;
+String eap_username;
+bool use_enterprise = false;
+extern String server_url;
 const String check_path = "/api/check";
 
 // main
@@ -24,19 +17,33 @@ void setup() {
   delay(5000);                  // I open monitor. see debug msg
   pinMode(LED_BUILTIN, OUTPUT); // LED, for test ota
 
-  initFS();
+  // Initialize Filesystem first
+  if (!initFS()) {
+    Serial.println("Critical error: LittleFS initialization failed. Rebooting...");
+    delay(1000);
+    ESP.restart();
+  }
+
+  // Load configs dynamically
+  if (!loadConfig(wifi_ssid, wifi_password, eap_identity, eap_username, use_enterprise, server_url)) {
+    Serial.println("Warning: Config load failed. Attempting to use default config...");
+  }
+
   initOTA(server_url, check_path);
   listDir(LittleFS, "/", 1);
-  // WiFi
-#ifdef USE_WPA2_ENTERPRISE
-  if (!initWiFiEnterprise(ssid, eap_identity, eap_username, eap_password)) {
+
+  // WiFi Connection
+  bool connected = false;
+  if (use_enterprise) {
+    connected = initWiFiEnterprise(wifi_ssid, eap_identity, eap_username, wifi_password);
+  } else {
+    connected = initWiFi(wifi_ssid, wifi_password);
+  }
+
+  if (!connected) {
     ESP.restart();
   }
-#else
-  if (!initWiFi(ssid, password)) {
-    ESP.restart();
-  }
-#endif
+
   markFirmwareValid();
 }
 
@@ -58,13 +65,15 @@ void loop() {
     }
   } else {
     // if cannot reconnect then restart esp32
-#ifdef USE_WPA2_ENTERPRISE
-    if (!initWiFiEnterprise(ssid, eap_identity, eap_username, eap_password))
+    bool reconnected = false;
+    if (use_enterprise) {
+      reconnected = initWiFiEnterprise(wifi_ssid, eap_identity, eap_username, wifi_password);
+    } else {
+      reconnected = initWiFi(wifi_ssid, wifi_password);
+    }
+    if (!reconnected) {
       ESP.restart();
-#else
-    if (!initWiFi(ssid, password))
-      ESP.restart();
-#endif
+    }
   }
 
   delay(6000); // every 6s, check version (temp

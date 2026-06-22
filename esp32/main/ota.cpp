@@ -210,6 +210,43 @@ bool initWiFiEnterprise(const String &ssid, const String &identity, const String
   return true;
 }
 
+// Load OTA and Wi-Fi configurations from LittleFS JSON config
+bool loadConfig(String &ssid, String &password, String &identity, String &username, bool &useEnterprise, String &serverUrl) {
+  if (!LittleFS.exists("/config.json")) {
+    Serial.println("Failed to find config file!");
+    return false;
+  }
+
+  File file = LittleFS.open("/config.json", "r");
+  if (!file) {
+    Serial.println("Failed to open config file!");
+    return false;
+  }
+
+  JsonDocument doc;
+  DeserializationError error = deserializeJson(doc, file);
+  file.close();
+
+  if (error) {
+    Serial.print("Failed to parse config file: ");
+    Serial.println(error.c_str());
+    return false;
+  }
+
+  ssid = doc["wifi_ssid"].as<String>();
+  password = doc["wifi_password"].as<String>();
+  identity = doc["eap_identity"].as<String>();
+  username = doc["eap_username"].as<String>();
+  useEnterprise = doc["use_enterprise"].as<bool>();
+  serverUrl = doc["server_url"].as<String>();
+
+  Serial.println("Config loaded successfully:");
+  Serial.printf("SSID: %s\n", ssid.c_str());
+  Serial.printf("Server URL: %s\n", serverUrl.c_str());
+  Serial.printf("WPA2 Enterprise: %s\n", useEnterprise ? "Yes" : "No");
+  return true;
+}
+
 // Check the server for an available firmware update
 bool check() {
   Serial.println(FIRMWARE_VERSION);
