@@ -6,6 +6,7 @@
 #include <NetworkClientSecure.h>
 #include <Update.h>
 #include <WiFi.h>
+#include <esp_ota_ops.h>
 
 // rsa and sha256 ...
 #include <mbedtls/base64.h>
@@ -14,7 +15,9 @@
 #include <mbedtls/sha256.h>
 
 // ================= global vars =================
-#define FIRMWARE_VERSION "1.2.5" // temp
+#define FIRMWARE_VERSION "2.1.0" // temp
+#define DEVICE_MODEL "ESP32"
+
 uint64_t chipid = ESP.getEfuseMac();
 String device_id = WiFi.macAddress();
 
@@ -26,51 +29,8 @@ String download_path;
 String version;
 String signature;
 
-const char *rootCACertificate = R"string_literal(
------BEGIN CERTIFICATE-----
-MIIFazCCA1OgAwIBAgIRAIIQz7DSQONZRGPgu2OCiwAwDQYJKoZIhvcNAQELBQAw
-TzELMAkGA1UEBhMCVVMxKTAnBgNVBAoTIEludGVybmV0IFNlY3VyaXR5IFJlc2Vh
-cmNoIEdyb3VwMRUwEwYDVQQDEwxJU1JHIFJvb3QgWDEwHhcNMTUwNjA0MTEwNDM4
-WhcNMzUwNjA0MTEwNDM4WjBPMQswCQYDVQQGEwJVUzEpMCcGA1UEChMgSW50ZXJu
-ZXQgU2VjdXJpdHkgUmVzZWFyY2ggR3JvdXAxFTATBgNVBAMTDElTUkcgUm9vdCBY
-MTCCAiIwDQYJKoZIhvcNAQEBBQADggIPADCCAgoCggIBAK3oJHP0FDfzm54rVygc
-h77ct984kIxuPOZXoHj3dcKi/vVqbvYATyjb3miGbESTtrFj/RQSa78f0uoxmyF+
-0TM8ukj13Xnfs7j/EvEhmkvBioZxaUpmZmyPfjxwv60pIgbz5MDmgK7iS4+3mX6U
-A5/TR5d8mUgjU+g4rk8Kb4Mu0UlXjIB0ttov0DiNewNwIRt18jA8+o+u3dpjq+sW
-T8KOEUt+zwvo/7V3LvSye0rgTBIlDHCNAymg4VMk7BPZ7hm/ELNKjD+Jo2FR3qyH
-B5T0Y3HsLuJvW5iB4YlcNHlsdu87kGJ55tukmi8mxdAQ4Q7e2RCOFvu396j3x+UC
-B5iPNgiV5+I3lg02dZ77DnKxHZu8A/lJBdiB3QW0KtZB6awBdpUKD9jf1b0SHzUv
-KBds0pjBqAlkd25HN7rOrFleaJ1/ctaJxQZBKT5ZPt0m9STJEadao0xAH0ahmbWn
-OlFuhjuefXKnEgV4We0+UXgVCwOPjdAvBbI+e0ocS3MFEvzG6uBQE3xDk3SzynTn
-jh8BCNAw1FtxNrQHusEwMFxIt4I7mKZ9YIqioymCzLq9gwQbooMDQaHWBfEbwrbw
-qHyGO0aoSCqI3Haadr8faqU9GY/rOPNk3sgrDQoo//fb4hVC1CLQJ13hef4Y53CI
-rU7m2Ys6xt0nUW7/vGT1M0NPAgMBAAGjQjBAMA4GA1UdDwEB/wQEAwIBBjAPBgNV
-HRMBAf8EBTADAQH/MB0GA1UdDgQWBBR5tFnme7bl5AFzgAiIyBpY9umbbjANBgkq
-hkiG9w0BAQsFAAOCAgEAVR9YqbyyqFDQDLHYGmkgJykIrGF1XIpu+ILlaS/V9lZL
-ubhzEFnTIZd+50xx+7LSYK05qAvqFyFWhfFQDlnrzuBZ6brJFe+GnY+EgPbk6ZGQ
-3BebYhtF8GaV0nxvwuo77x/Py9auJ/GpsMiu/X1+mvoiBOv/2X/qkSsisRcOj/KK
-NFtY2PwByVS5uCbMiogziUwthDyC3+6WVwW6LLv3xLfHTjuCvjHIInNzktHCgKQ5
-ORAzI4JMPJ+GslWYHb4phowim57iaztXOoJwTdwJx4nLCgdNbOhdjsnvzqvHu7Ur
-TkXWStAmzOVyyghqpZXjFaH3pO3JLF+l+/+sKAIuvtd7u+Nxe5AW0wdeRlN8NwdC
-jNPElpzVmbUq4JUagEiuTDkHzsxHpFKVK7q4+63SM1N95R1NbdWhscdCb+ZAJzVc
-oyi3B43njTOQ5yOf+1CceWxG1bQVs5ZufpsMljq4Ui0/1lvh+wjChP4kqKOJ2qxq
-4RgqsahDYVvTH9w7jXbyLeiNdd8XM2w9U/t7y0Ff/9yi0GE44Za4rF2LN9d11TPA
-mRGunUHBcnWEvgJBQl9nJEiU0Zsnvgc/ubhPgXRR4Xq37Z0j4r7g1SgEEzwxA57d
-emyPxgcYxn/eR44/KJ4EBs+lVDR3veyJm+kXQ99b21/+jh5Xos1AnX5iItreGCc=
------END CERTIFICATE-----
-)string_literal";
-
-const char *rsaPublicKey = R"string_literal(
------BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxd3hZpdiuZoJ/48iBJ9F
-3vX4RNo7eK7b1NlMfzezZRBCdB1vh/I32bG4sc+/npC3lmBRAs3TSW+GBne8fVIX
-jmTZUz8eAO2mjtKZ0BD978rg1D5lUVRRSVEnL735O9aKRfXflG8C70r0YVVfIr1s
-b4PreL34PlTZudTU42s/w1ixfAQdE4sElIFTDZpmhZGGBoGxa4b66U6Pd2rU1vR1
-1xYfz1MDS3BCQT+HEgbSLumrG0ogvnwLwpp+EFbBp7Q2wEqZ9FYOacdX/YXJC4Uc
-ml47jLm3KthS/pydYMTLvBBhUJyWhkHyLUgcCo9afwr1qrqenpzCFInngeFArFuN
-8wIDAQAB
------END PUBLIC KEY-----
-)string_literal";
+String rootCACertificate;
+String rsaPublicKey;
 
 // ================= internal func =================
 
@@ -117,8 +77,8 @@ bool verifyManifestSignature(String manifest, String b64Signature) {
   mbedtls_pk_init(&pk);
 
   // load public key
-  if (mbedtls_pk_parse_public_key(&pk, (const unsigned char *)rsaPublicKey,
-                                  strlen(rsaPublicKey) + 1) != 0) {
+  if (mbedtls_pk_parse_public_key(&pk, (const unsigned char *)rsaPublicKey.c_str(),
+                                  rsaPublicKey.length() + 1) != 0) {
     Serial.println("Public key parsing failed!");
     return false;
   }
@@ -157,7 +117,7 @@ bool verifyManifestSignature(String manifest, String b64Signature) {
 void setClient() {
   client = new NetworkClientSecure();
   // client = new NetworkClient();
-  client->setCACert(rootCACertificate);
+  client->setCACert(rootCACertificate.c_str());
 }
 
 // Delete the network client and free resources
@@ -177,6 +137,7 @@ bool initOTA(const String &serverUrl, const String &checkPath) {
 
 // Connect to the specified WiFi network
 bool initWiFi(const String &ssid, const String &password) {
+  WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
 
   int count = 0;
@@ -191,6 +152,72 @@ bool initWiFi(const String &ssid, const String &password) {
     return false;
   }
   Serial.println("\nWiFi connected");
+  return true;
+}
+
+// Connect to WPA2 Enterprise WiFi network (e.g. PEAP)
+bool initWiFiEnterprise(const String &ssid, const String &identity, const String &username, const String &password) {
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_STA);
+
+  WiFi.begin(ssid.c_str(), WPA2_AUTH_PEAP, identity.c_str(), username.c_str(), password.c_str());
+
+  int count = 0;
+  while (WiFi.status() != WL_CONNECTED && count < 20) {
+    delay(1000);
+    Serial.print(".");
+    ++count;
+  }
+
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("\nWiFi Enterprise connect failed");
+    return false;
+  }
+  Serial.println("\nWiFi Enterprise connected");
+  return true;
+}
+
+// Load OTA and Wi-Fi configurations from LittleFS JSON config
+bool loadConfig(String &ssid, String &password, String &identity, String &username, bool &useEnterprise, String &serverUrl) {
+  if (!LittleFS.exists("/config.json")) {
+    Serial.println("Failed to find config file!");
+    return false;
+  }
+
+  File file = LittleFS.open("/config.json", "r");
+  if (!file) {
+    Serial.println("Failed to open config file!");
+    return false;
+  }
+
+  JsonDocument doc;
+  DeserializationError error = deserializeJson(doc, file);
+  file.close();
+
+  if (error) {
+    Serial.print("Failed to parse config file: ");
+    Serial.println(error.c_str());
+    return false;
+  }
+
+  ssid = doc["wifi_ssid"].as<String>();
+  password = doc["wifi_password"].as<String>();
+  identity = doc["eap_identity"].as<String>();
+  username = doc["eap_username"].as<String>();
+  useEnterprise = doc["use_enterprise"].as<bool>();
+  serverUrl = doc["server_url"].as<String>();
+  rootCACertificate = doc["ca_cert"].as<String>();
+  rsaPublicKey = doc["public_key"].as<String>();
+
+  if (ssid.isEmpty() || serverUrl.isEmpty() || rootCACertificate.isEmpty() || rsaPublicKey.isEmpty()) {
+    Serial.println("Required config fields are missing or empty!");
+    return false;
+  }
+
+  Serial.println("Config loaded successfully:");
+  Serial.printf("SSID: %s\n", ssid.c_str());
+  Serial.printf("Server URL: %s\n", serverUrl.c_str());
+  Serial.printf("WPA2 Enterprise: %s\n", useEnterprise ? "Yes" : "No");
   return true;
 }
 
@@ -268,13 +295,36 @@ bool downloadFirmwareToFS() {
   return true;
 }
 
+// Check if v1 is newer than v2. Returns true if v1 > v2.
+bool isVersionNewer(const String &v1, const String &v2) {
+  int val1[3] = {0, 0, 0};
+  int val2[3] = {0, 0, 0};
+  sscanf(v1.c_str(), "%d.%d.%d", &val1[0], &val1[1], &val1[2]);
+  sscanf(v2.c_str(), "%d.%d.%d", &val2[0], &val2[1], &val2[2]);
+  for (int i = 0; i < 3; i++) {
+    if (val1[i] > val2[i]) return true;
+    if (val1[i] < val2[i]) return false;
+  }
+  return false;
+}
+
+// Mark firmware valid to cancel auto-rollback
+void markFirmwareValid() {
+  esp_err_t err = esp_ota_mark_app_valid_cancel_rollback();
+  if (err == ESP_OK) {
+    Serial.println("Firmware marked as valid (rollback canceled).");
+  } else {
+    Serial.printf("Failed to mark firmware as valid, error: 0x%x\n", err);
+  }
+}
+
 // Execute the OTA update process, including verification and flashing
 void OTA() {
   String fileSha256 = calculateFileSHA256("/firmware.bin");
   Serial.println("SHA-256: " + fileSha256);
 
   // Manifest String (same as server)
-  String manifest = "ESP32|" + version + "|" + fileSha256;
+  String manifest = String(DEVICE_MODEL) + "|" + version + "|" + fileSha256;
   Serial.println(manifest);
 
   // compare RSA signature
@@ -282,6 +332,13 @@ void OTA() {
     Serial.println("Digital signature verification passed.");
   } else {
     Serial.println("Error: Digital signature verification failed.");
+    LittleFS.remove("/firmware.bin");
+    return;
+  }
+
+  // Downgrade protection / Freshness check
+  if (!isVersionNewer(version, FIRMWARE_VERSION)) {
+    Serial.printf("Error: Downgrade attack detected. Version %s is not newer than current %s.\n", version.c_str(), FIRMWARE_VERSION);
     LittleFS.remove("/firmware.bin");
     return;
   }
