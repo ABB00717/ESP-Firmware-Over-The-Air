@@ -1,10 +1,10 @@
-from flask import Flask, redirect
-from pathlib import Path
 import tomllib
 from os import chdir
+from pathlib import Path
 
-from blueprints.firmware import firmware_bp
 from blueprints.api import api_bp
+from blueprints.firmware import firmware_bp
+from flask import Flask, redirect
 from utils import generate_self_signed_cert
 
 CURPATH = Path(__file__).parent
