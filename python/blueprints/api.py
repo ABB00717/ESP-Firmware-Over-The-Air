@@ -1,5 +1,5 @@
-from flask import Blueprint, request, current_app, abort, make_response, send_file
-from utils import get_version_list, compare_version
+from flask import Blueprint, abort, current_app, make_response, request, send_file
+from utils import compare_version, get_version_list
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 
