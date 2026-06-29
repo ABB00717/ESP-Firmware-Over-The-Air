@@ -53,18 +53,49 @@ us can clone the repo and run the app from a documented setup.
 Move today's working OTA flow onto the new stack with feature parity. No new
 capabilities yet, just the same behaviour on FastAPI + SQLite.
 
-- FastAPI skeleton with SQLite via SQLAlchemy and Alembic for migrations
-- A storage interface with a local-filesystem implementation; firmware binaries
-  saved on disk, metadata in the database
+**Backend layout (pragmatic Clean Architecture):**
+Dependencies point inward: `api → application → domain`. `infrastructure`
+implements the ports defined by the inner layers. Only persistence and storage
+are abstracted behind ports — that is what buys swap-ability later without
+drowning a beginner in boilerplate everywhere.
+
+```
+backend/
+  domain/           # pure business logic, no framework imports
+    models.py         # Firmware / Device entities (plain dataclasses)
+    signing.py        # signing/verification ported from the Flask code
+  ports/            # abstract interfaces only
+    repository.py     # FirmwareRepository, DeviceRepository
+    storage.py        # StorageBackend (put / get / delete one file)
+  application/      # use cases that wire the ports together
+    upload_firmware.py
+    check_update.py
+  infrastructure/   # concrete, swappable implementations of the ports
+    sqlite_repo.py    # SQLAlchemy; swap for postgres_repo.py at M5 if needed
+    local_storage.py  # local disk; add s3_storage.py later
+  api/              # thin FastAPI layer — no business logic here
+    routes.py
+    deps.py           # dependency injection wiring via FastAPI Depends()
+  main.py
+```
+
+The PM designs the ports and `domain/` (high leverage, costly if wrong). The
+beginner fills in concrete adapters from a template — given `StorageBackend`
+and `local_storage.py`, they write `s3_storage.py` the same way.
+
+**Tasks:**
+- Scaffold the `backend/` tree above; wire FastAPI with SQLAlchemy and Alembic
 - Port the existing RSA-PSS signing and `model|version|sha256` manifest logic
-  from the current Flask code; keep it byte-for-byte compatible so existing
-  signatures still verify on-device
+  from the Flask code into `domain/signing.py`; keep it byte-for-byte compatible
+  so existing signatures still verify on-device
 - `Firmware` model and an upload endpoint, gated by the existing admin key for
   now (real auth comes in M2)
 - Device endpoints `POST /api/check` and `GET /api/download/{id}` matching the
   current ESP32 protocol exactly
+- Local-filesystem `StorageBackend`; firmware binaries on disk, metadata in SQLite
 - Fix the two known ESP32 issues while porting: replace the hardcoded system
   time with SNTP, and align the version-compare logic between device and server
+- Write `CONTRIBUTING.md` as warm-up **(good first task)**
 - Add unit tests for the signing and version-compare logic **(good first task)**
 
 **Done when:** The existing ESP32 device can check, download, verify, and flash a
